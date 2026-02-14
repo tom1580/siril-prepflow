@@ -92,11 +92,4 @@ You can adjust the exact paths via the GUI fields if your layout is different.
 - ドリズルは **デベイヤー前の生データ** を必要とするため、ドリズル有効時には GUI 側でデベイヤー設定を自動的に無効化します（その逆も同様）。  
 - 一部の高度な Siril オプション（例: 歪曲補正ファイルの扱いなど）は GUI からは簡略化されており、必要に応じて生成スクリプトを手動で調整してください。
 
----
-
-### License / ライセンス
-
-Specify your license here (e.g. MIT, GPL, etc.).
-
-ここに使用したいライセンス（例: MIT, GPL など）を記載してください。
 
