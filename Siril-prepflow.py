@@ -64,7 +64,7 @@ class PreprocessGUI(QMainWindow):
     def __init__(self, siril_app):
         super().__init__()
         self.siril = siril_app
-        self.setWindowTitle("Siril Preprocessing Flow v1.0")
+        self.setWindowTitle("Siril Preprocessing Flow v1.1")
         self.resize(610, 630)
         self.filters = []
 
@@ -708,6 +708,11 @@ class PreprocessGUI(QMainWindow):
         self.save_settings()
         event.accept()
 
+    def get_settings_path(self):
+        # Determine the directory of the script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(script_dir, "settings.json")
+
     def save_settings(self):
         settings = {
             "save_enabled": self.chk_save_settings.isChecked()
@@ -783,17 +788,19 @@ class PreprocessGUI(QMainWindow):
             settings["filters"] = filter_data
 
         try:
-            with open("settings.json", "w") as f:
+            settings_path = self.get_settings_path()
+            with open(settings_path, "w") as f:
                 json.dump(settings, f, indent=4)
         except Exception as e:
             print(f"Failed to save settings: {e}")
 
     def load_settings(self):
-        if not os.path.exists("settings.json"):
+        settings_path = self.get_settings_path()
+        if not os.path.exists(settings_path):
             return
         
         try:
-            with open("settings.json", "r") as f:
+            with open(settings_path, "r") as f:
                 settings = json.load(f)
         except Exception:
             return
