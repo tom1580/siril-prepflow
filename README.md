@@ -68,12 +68,14 @@ You can adjust the exact paths via the GUI fields if your layout is different.
 
 ### How to run / 使い方
 
+#### English
 1. **Launch Siril**.
 2. Run the script by selecting **`Siril-prepflow.py`** from Siril's menu. 
 3. Configure each tab (**Convert**, **Calibration**, **Registration**, **Stacking**) according to your dataset and preferences.
 4. Click **“Generate Script”** to create the Siril script; it will appear in the text area.
 5. Click **“Run Script in Siril”** to execute the script step‑by‑step.
 
+#### 日本語
 1. **Siril を起動**します。
 2. Siril のメニューから **`Siril-prepflow.py`** を選択して実行します。
 3. データセットに合わせて、各タブ（**Convert / Calibration / Registration / Stacking**）の設定を行います。
