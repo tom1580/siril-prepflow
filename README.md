@@ -32,6 +32,14 @@ It helps you configure **conversion, calibration, registration, and stacking** s
   - マスターフレーム（Bias, Dark, Flat）の自動生成。
   - ドリズル対応、リジェクトアルゴリズム、品質ベースの重み付けなど高度な設定も可能。
 
+- **Settings Preservation**
+  - **Remember Settings:** Automatically saves your configurations to `settings.json` upon closing and restores them on the next launch.
+  - This prevents repetitive manual entry of paths and parameters.
+
+- **設定の保存機能**
+  - **設定の自動保存:** 終了時に設定を `settings.json` に自動保存し、次回起動時に復元します。
+  - パスやパラメータを毎回入力し直す手間を省けます。
+
 ---
 
 ### Requirements / 必要環境
