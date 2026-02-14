@@ -10,10 +10,14 @@ from sirilpy.exceptions import SirilError, CommandError
 
 # Import PyQt6
 try:
-    from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                                 QTabWidget, QLabel, QLineEdit, QCheckBox, QComboBox,
-                                 QPushButton, QTextEdit, QGridLayout, QGroupBox, QScrollArea,
-                                 QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QSpinBox, QDoubleSpinBox)
+    import json
+    import subprocess
+    from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                                 QHBoxLayout, QTabWidget, QLabel, QLineEdit,
+                                 QPushButton, QCheckBox, QComboBox, QGroupBox,
+                                 QGridLayout, QTextEdit, QFileDialog, QSpinBox,
+                                 QDoubleSpinBox, QScrollArea, QMessageBox,
+                                 QTableWidget, QTableWidgetItem, QHeaderView) # Added missing imports from original
     from PyQt6.QtCore import Qt
 except ImportError:
     # Fallback to ensure_installed if strictly necessary, but standard environment implies availability
@@ -115,10 +119,18 @@ class PreprocessGUI(QMainWindow):
         # Disable run button if not connected? For now, keep enabled and try connect on click or init
         btn_layout.addWidget(self.btn_run)
         
+        # Save Settings Checkbox
+        self.chk_save_settings = QCheckBox("Remember Settings")
+        self.chk_save_settings.setToolTip("If checked, current settings will be saved and restored on next launch.\nIf unchecked, default settings will be loaded.")
+        btn_layout.addWidget(self.chk_save_settings)
+
         main_layout.addLayout(btn_layout)
 
         # Initialize UI states
         self.update_ui_states()
+        
+        # Load settings if available
+        self.load_settings()
 
     def create_convert_tab(self):
         tab = QWidget()
@@ -470,7 +482,7 @@ class PreprocessGUI(QMainWindow):
 
         self.stk_norm_lbl = QLabel("Normalization:")
         self.stk_norm = QComboBox()
-        self.stk_norm.addItems(["Additive + Scaling", "Additive", "Multiplicative", "None"])
+        self.stk_norm.addItems(["Additive + Scaling", "None", "Additive", "Multiplicative", "Multiplicative + Scaling"])
         gl_meth.addWidget(self.stk_norm_lbl, 1, 0)
         gl_meth.addWidget(self.stk_norm, 1, 1)
 
@@ -675,73 +687,211 @@ class PreprocessGUI(QMainWindow):
         script_content = self.output_text.toPlainText()
         if not script_content.strip():
             return
-        
+
+        lines = script_content.split('\n')
         try:
-            # We will ignore the lines added for "Post-Processing" in the text box for direct execution 
-            # and instead handle them programmatically OR we can just execute provided lines.
-            # But the requirement says "Run Script" should check headers.
-            # So let's execute everything UP TO the post-processing block, then do custom logic.
-            
-            lines = script_content.split('\n')
             for line in lines:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue
                 
-                print(f"Executing: {line}")
-                if line.startswith("cd ") or line.lower().startswith("cd "):
-                     time.sleep(1.0) # Wait a bit for filesystem/convert?
-                
-                # Check for post-processing commands to skip BEFORE executing
-                if line.startswith("save ../") or line.startswith("cd ..") or line.startswith("close"):
-                    # Skip post-processing commands from the script content as we handle them explicitly here
-                    # Note: "cd .." might be used elsewhere? 
-                    # If it is inside convert blocks, we MUST execute it.
-                    # The post-processing block has "cd .." at the very end.
-                    # But convert blocks also have "cd ..".
-                    # We should only skip the LAST ones or identify them better.
-                    # Actually, the script generator adds a comment "# --- Post-Processing ---".
-                    # We can use a flag.
-                    pass
-                
-                # Refined logic:
-                # The script text contains everything.
-                # But we append custom logic at the end of run_script.
-                # If we run the script text, we run the post-processing from the text.
-                # Then we run it AGAIN from the python logic below loop.
-                # This causes double post-processing?
-                # User complaint is "cd lights is executed twice".
-                # "cd lights" is at start of script.
-                
-                # The issue was indeed double self.siril.cmd(line) in previous code block relative to line 631 and 648.
-                
+                # Execute command
                 self.siril.cmd(line)
             
-            # --- Post-Processing Logic ---
-            out_filename = self.stk_out_name.text() # e.g. "result" or "M31"
+            QMessageBox.information(self, "Success", "Script execution completed.")
             
-            # Load result
-            load_name = out_filename
-            if not load_name.endswith(".fit") and not load_name.endswith(".fits"):
-                load_name += ".fit"
-            
-            self.siril.cmd(f"load {load_name}")
-            
-            # Manual Flip Step
-            if self.stk_bottomup_chk.isChecked():
-                self.siril.cmd("mirrorx -bottomup")
-            
-            # Save to final location (Parent dir)
-            # Format: ../{out_filename}_$LIVETIME:%d$s
-            self.siril.cmd(f"save ../{out_filename}_$LIVETIME:%d$s")
-            
-            # Cleanup
-            self.siril.cmd("cd ..")
-            self.siril.cmd("close")
-
-            QMessageBox.information(self, "Success", "Script execution and post-processing completed.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"An error occurred during execution:\n{str(e)}")
+
+
+    def closeEvent(self, event):
+        self.save_settings()
+        event.accept()
+
+    def save_settings(self):
+        settings = {
+            "save_enabled": self.chk_save_settings.isChecked()
+        }
+        
+        if self.chk_save_settings.isChecked():
+            # Convert Tab
+            settings["conv_basename"] = self.conv_basename.text()
+            settings["conv_start_idx"] = self.conv_start_idx.text()
+            settings["conv_out_dir"] = self.conv_out_dir.text()
+            settings["conv_debayer"] = self.conv_debayer.isChecked()
+            settings["create_master_bias"] = self.create_bias_chk.isChecked()
+            settings["create_master_flat"] = self.create_flat_chk.isChecked()
+            settings["flat_bias_source"] = self.flat_bias_source.currentIndex()
+            settings["flat_synth_bias_val"] = self.flat_synth_bias_val.text()
+            settings["create_master_dark"] = self.create_dark_chk.isChecked()
+            
+            # Calibration Tab
+            settings["cal_seq_name"] = self.cal_seq_name.text()
+            settings["cal_prefix"] = self.cal_prefix.text()
+            settings["use_bias_chk"] = self.use_bias_chk.isChecked()
+            settings["use_bias_path"] = self.use_bias_path.text()
+            settings["use_dark_chk"] = self.use_dark_chk.isChecked()
+            settings["use_dark_path"] = self.use_dark_path.text()
+            settings["use_flat_chk"] = self.use_flat_chk.isChecked()
+            settings["use_flat_path"] = self.use_flat_path.text()
+            settings["cal_cc_type"] = self.cal_cc_type.currentIndex()
+            settings["cal_bpm_path"] = self.cal_bpm_path.text()
+            settings["cal_cold_sigma"] = self.cal_cold_sigma.value()
+            settings["cal_hot_sigma"] = self.cal_hot_sigma.value()
+            settings["cal_cfa_chk"] = self.cal_cfa_chk.isChecked()
+            settings["cal_eq_cfa_chk"] = self.cal_eq_cfa_chk.isChecked()
+            settings["cal_debayer_chk"] = self.cal_debayer_chk.isChecked()
+            
+            # Registration Tab
+            settings["reg_seq_name"] = self.reg_seq_name.text()
+            settings["reg_prefix"] = self.reg_prefix.text()
+            settings["reg_transform"] = self.reg_transform.currentIndex()
+            settings["reg_layer"] = self.reg_layer.currentIndex()
+            settings["reg_2pass_chk"] = self.reg_2pass_chk.isChecked()
+            settings["reg_minpairs"] = self.reg_minpairs.value()
+            settings["reg_maxstars"] = self.reg_maxstars.value()
+            settings["reg_drizzle_chk"] = self.reg_drizzle_chk.isChecked()
+            settings["reg_driz_scale"] = self.reg_driz_scale.value()
+            settings["reg_driz_pixfrac"] = self.reg_driz_pixfrac.value()
+            settings["reg_driz_kernel"] = self.reg_driz_kernel.currentIndex()
+            settings["reg_interp"] = self.reg_interp.currentIndex()
+            settings["reg_disto"] = self.reg_disto.currentIndex()
+            settings["reg_framing"] = self.reg_framing.currentIndex()
+
+            # Stacking Tab
+            settings["stk_seq_name"] = self.stk_seq_name.text()
+            settings["stk_out_name"] = self.stk_out_name.text()
+            settings["stk_method"] = self.stk_method.currentIndex()
+            settings["stk_norm"] = self.stk_norm.currentIndex()
+            settings["stk_rej_algo"] = self.stk_rej_algo.currentIndex()
+            settings["stk_sigma_low"] = self.stk_sigma_low.value()
+            settings["stk_sigma_high"] = self.stk_sigma_high.value()
+            settings["stk_weight"] = self.stk_weight.currentIndex()
+            settings["stk_rgb_eq"] = self.stk_rgb_eq.isChecked()
+            settings["stk_out_norm"] = self.stk_out_norm.isChecked()
+            settings["stk_32b"] = self.stk_32b.isChecked()
+            settings["stk_bottomup_chk"] = self.stk_bottomup_chk.isChecked()
+            
+            # Filters
+            filter_data = []
+            for filt in self.filters:
+                filter_data.append({
+                    "type": filt.cb_type.currentIndex(),
+                    "value": filt.val_edit.text(),
+                    "unit": filt.cb_unit.currentIndex()
+                })
+            settings["filters"] = filter_data
+
+        try:
+            with open("settings.json", "w") as f:
+                json.dump(settings, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save settings: {e}")
+
+    def load_settings(self):
+        if not os.path.exists("settings.json"):
+            return
+        
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.load(f)
+        except Exception:
+            return
+
+        if not settings.get("save_enabled", False):
+            return
+
+        self.chk_save_settings.setChecked(True)
+        
+        # Helper to safely set values
+        def set_text(widget, key):
+            if key in settings: widget.setText(str(settings[key]))
+        def set_idx(widget, key):
+            if key in settings: widget.setCurrentIndex(int(settings[key]))
+        def set_chk(widget, key):
+            if key in settings: widget.setChecked(bool(settings[key]))
+        def set_float(widget, key):
+            if key in settings: widget.setValue(float(settings[key]))
+        def set_int(widget, key):
+            # Convert to float first to handle cases like 10.0 in json, then int
+            if key in settings: widget.setValue(int(float(settings[key])))
+
+        # Convert Tab
+        set_text(self.conv_basename, "conv_basename")
+        set_text(self.conv_start_idx, "conv_start_idx")
+        set_text(self.conv_out_dir, "conv_out_dir")
+        set_chk(self.conv_debayer, "conv_debayer")
+        
+        set_chk(self.create_bias_chk, "create_master_bias")
+        set_chk(self.create_flat_chk, "create_master_flat")
+        set_idx(self.flat_bias_source, "flat_bias_source")
+        set_text(self.flat_synth_bias_val, "flat_synth_bias_val")
+        set_chk(self.create_dark_chk, "create_master_dark")
+
+        # Calibration Tab
+        set_text(self.cal_seq_name, "cal_seq_name")
+        set_text(self.cal_prefix, "cal_prefix")
+        set_chk(self.use_bias_chk, "use_bias_chk")
+        set_text(self.use_bias_path, "use_bias_path")
+        set_chk(self.use_dark_chk, "use_dark_chk")
+        set_text(self.use_dark_path, "use_dark_path")
+        set_chk(self.use_flat_chk, "use_flat_chk")
+        set_text(self.use_flat_path, "use_flat_path")
+        
+        set_idx(self.cal_cc_type, "cal_cc_type")
+        set_text(self.cal_bpm_path, "cal_bpm_path")
+        set_float(self.cal_cold_sigma, "cal_cold_sigma")
+        set_float(self.cal_hot_sigma, "cal_hot_sigma")
+        set_chk(self.cal_cfa_chk, "cal_cfa_chk")
+        set_chk(self.cal_eq_cfa_chk, "cal_eq_cfa_chk")
+        set_chk(self.cal_debayer_chk, "cal_debayer_chk")
+
+        # Registration Tab
+        set_text(self.reg_seq_name, "reg_seq_name")
+        set_text(self.reg_prefix, "reg_prefix")
+        set_idx(self.reg_transform, "reg_transform")
+        set_idx(self.reg_layer, "reg_layer")
+        set_chk(self.reg_2pass_chk, "reg_2pass_chk")
+        set_int(self.reg_minpairs, "reg_minpairs")
+        set_int(self.reg_maxstars, "reg_maxstars")
+        set_chk(self.reg_drizzle_chk, "reg_drizzle_chk")
+        set_float(self.reg_driz_scale, "reg_driz_scale")
+        set_float(self.reg_driz_pixfrac, "reg_driz_pixfrac")
+        set_idx(self.reg_driz_kernel, "reg_driz_kernel")
+        set_idx(self.reg_interp, "reg_interp")
+        set_idx(self.reg_disto, "reg_disto")
+        set_idx(self.reg_framing, "reg_framing")
+
+        # Stacking Tab
+        set_text(self.stk_seq_name, "stk_seq_name")
+        set_text(self.stk_out_name, "stk_out_name")
+        set_idx(self.stk_method, "stk_method")
+        set_idx(self.stk_norm, "stk_norm")
+        set_idx(self.stk_rej_algo, "stk_rej_algo")
+        set_float(self.stk_sigma_low, "stk_sigma_low")
+        set_float(self.stk_sigma_high, "stk_sigma_high")
+        set_idx(self.stk_weight, "stk_weight")
+        set_chk(self.stk_rgb_eq, "stk_rgb_eq")
+        set_chk(self.stk_out_norm, "stk_out_norm")
+        set_chk(self.stk_32b, "stk_32b")
+        set_chk(self.stk_bottomup_chk, "stk_bottomup_chk")
+
+        # Filters - Clear existing and add saved
+        if "filters" in settings:
+            # Clear existing filters first
+            for f in self.filters[:]:
+                self.remove_filter_row(f)
+
+            for f_data in settings["filters"]:
+                self.add_filter_row()
+                # Check bounds or try/except if index out of range?
+                # Assuming saved settings are valid within current combo ranges
+                new_filt = self.filters[-1]
+                new_filt.cb_type.setCurrentIndex(f_data["type"])
+                new_filt.val_edit.setText(f_data["value"])
+                new_filt.cb_unit.setCurrentIndex(f_data["unit"])
+        
+        self.update_ui_states()
 
 
 class ScriptGenerator:
@@ -1003,6 +1153,20 @@ class ScriptGenerator:
                 sl = self.gui.stk_sigma_low.value()
                 sh = self.gui.stk_sigma_high.value()
                 cmd += f" {algo_char} {sl} {sh}"
+
+            # Normalization
+            # 0=Add+Scale, 1=None, 2=Add, 3=Mul, 4=MulScale
+            norm_idx = self.gui.stk_norm.currentIndex()
+            if norm_idx == 0:
+                cmd += " -norm=addscale"
+            elif norm_idx == 1:
+                cmd += " -nonorm"
+            elif norm_idx == 2:
+                cmd += " -norm=add"
+            elif norm_idx == 3:
+                cmd += " -norm=mul"
+            elif norm_idx == 4:
+                cmd += " -norm=mulscale"
             
             # Weighting
             # None, Noise, WFWHM, Stars, NbImages
@@ -1032,13 +1196,7 @@ class ScriptGenerator:
                 
                 cmd += f" -filter-{t_txt}={val_txt}{u_txt}"
 
-        # Normalization
-        norm_idx = self.gui.stk_norm.currentIndex()
-        if norm_idx == 0: pass # Add+Scale default? Actually default depends. usually addscale.
-        elif norm_idx == 1: cmd += " -norm=add"
-        elif norm_idx == 2: cmd += " -norm=mul"
-        elif norm_idx == 3: cmd += " -nonorm"
-        
+
         if self.gui.stk_rgb_eq.isChecked(): cmd += " -rgb_equal"
         if self.gui.stk_out_norm.isChecked(): cmd += " -output_norm"
         if self.gui.stk_32b.isChecked(): cmd += " -32b"
