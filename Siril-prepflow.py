@@ -64,7 +64,7 @@ class PreprocessGUI(QMainWindow):
     def __init__(self, siril_app):
         super().__init__()
         self.siril = siril_app
-        self.setWindowTitle("Siril Preprocessing Flow v1.1")
+        self.setWindowTitle("Siril Preprocessing Flow v1.2")
         self.resize(610, 630)
         self.filters = []
 
@@ -245,13 +245,29 @@ class PreprocessGUI(QMainWindow):
         gl_mast.addWidget(self.use_dark_chk, 1, 0)
         gl_mast.addWidget(self.use_dark_path, 1, 1)
 
+        # Dark Opt (Nested under Dark)
+        opt_layout = QHBoxLayout()
+        opt_layout.setContentsMargins(10, 0, 0, 0) # Small indent within column 1 logic if needed, or just 0
+        opt_layout.setSpacing(5)
+        opt_layout.addWidget(QLabel("Dark Opt:"))
+        self.cal_dark_opt = QComboBox()
+        self.cal_dark_opt.addItems(["None", "Auto-evaluation", "Use Exposure"])
+        opt_layout.addWidget(self.cal_dark_opt)
+        opt_layout.addStretch()
+        gl_mast.addLayout(opt_layout, 2, 1)
+
         # Flat
         self.use_flat_chk = QCheckBox("Use Flat")
         self.use_flat_chk.setChecked(True)
         self.use_flat_path = QLineEdit(f"{DIR_MASTERS}/pp_flat_stacked.fit")
         self.use_flat_chk.toggled.connect(lambda c: self.use_flat_path.setEnabled(c))
-        gl_mast.addWidget(self.use_flat_chk, 2, 0)
-        gl_mast.addWidget(self.use_flat_path, 2, 1)
+        gl_mast.addWidget(self.use_flat_chk, 3, 0)
+        gl_mast.addWidget(self.use_flat_path, 3, 1)
+
+        self.cal_fix_xtrans = QCheckBox("Fix X-Trans Artifact")
+        self.cal_fix_xtrans.setToolTip("Fix Fujifilm X-Trans AF pixel patterns (requires dark or bias)")
+        gl_mast.addWidget(self.cal_fix_xtrans, 4, 0)
+
         layout.addWidget(grp_mast)
 
         # Correction & CFA
@@ -438,6 +454,7 @@ class PreprocessGUI(QMainWindow):
         gl_framing.addWidget(QLabel("Framing:"), 0, 0)
         self.reg_framing = QComboBox()
         self.reg_framing.addItems(["Current (Default)", "Max (Bounding Box)", "Min (Common Area)", "Center of Gravity"])
+        self.reg_framing.currentIndexChanged.connect(self.update_ui_states)
         gl_framing.addWidget(self.reg_framing, 0, 1)
         
         layout.addWidget(self.grp_framing)
@@ -476,9 +493,14 @@ class PreprocessGUI(QMainWindow):
         
         gl_meth.addWidget(QLabel("Method:"), 0, 0)
         self.stk_method = QComboBox()
-        self.stk_method.addItems(["Average with Rejection", "Sum", "Median", "Pixel Maximum"])
+        self.stk_method.addItems(["Average with Rejection", "Sum", "Median", "Pixel Maximum", "Pixel Minimum"])
         self.stk_method.currentIndexChanged.connect(self.update_ui_states)
         gl_meth.addWidget(self.stk_method, 0, 1)
+
+        gl_meth.addWidget(QLabel("Rejection Map:"), 0, 2)
+        self.stk_rej_map = QComboBox()
+        self.stk_rej_map.addItems(["None", "One Map (-rejmap)", "Two Maps (-rejmaps)"])
+        gl_meth.addWidget(self.stk_rej_map, 0, 3)
 
         self.stk_norm_lbl = QLabel("Normalization:")
         self.stk_norm = QComboBox()
@@ -561,6 +583,29 @@ class PreprocessGUI(QMainWindow):
         gl_opts.addWidget(self.stk_bottomup_chk, 1, 3)
 
         layout.addWidget(grp_opts)
+
+        # Image Stitching (Mosaicing) Options
+        self.grp_stitching = QGroupBox("Image Stitching")
+        gl_stitch = QGridLayout()
+        self.grp_stitching.setLayout(gl_stitch)
+
+        self.stk_maximize = QCheckBox("Maximize Framing")
+        self.stk_maximize.setToolTip("Encompass all images (required for overlap norm)")
+        self.stk_maximize.toggled.connect(self.update_ui_states)
+        gl_stitch.addWidget(self.stk_maximize, 0, 0)
+
+        self.stk_overlap_norm = QCheckBox("Overlap Normalization")
+        self.stk_overlap_norm.setToolTip("Compute norm on overlaps (requires Maximize Framing)")
+        gl_stitch.addWidget(self.stk_overlap_norm, 0, 1)
+
+        gl_stitch.addWidget(QLabel("Feather:"), 0, 2)
+        self.stk_feather = QSpinBox()
+        self.stk_feather.setRange(0, 1000)
+        self.stk_feather.setValue(0)
+        self.stk_feather.setSuffix(" px")
+        gl_stitch.addWidget(self.stk_feather, 0, 3)
+
+        layout.addWidget(self.grp_stitching)
         layout.addStretch()
         
         tab_layout = QVBoxLayout(tab)
@@ -663,6 +708,16 @@ class PreprocessGUI(QMainWindow):
         self.stk_weight_lbl.setVisible(is_rej)
         self.stk_filters_group.setVisible(is_rej)
 
+        # Image Stitching visibility depends on Registration Framing == Maximum (Index 1)
+        is_max_framing = (self.reg_framing.currentIndex() == 1)
+        self.grp_stitching.setVisible(is_max_framing)
+
+        # Overlap Norm requires Maximize Framing
+        maximize_checked = self.stk_maximize.isChecked()
+        self.stk_overlap_norm.setEnabled(maximize_checked)
+        if not maximize_checked:
+            self.stk_overlap_norm.setChecked(False)
+
     def add_filter_row(self):
         row_widget = FilterRowWidget(on_delete=self.remove_filter_row)
         # Insert before the stretch at the end
@@ -745,6 +800,8 @@ class PreprocessGUI(QMainWindow):
             settings["cal_hot_sigma"] = self.cal_hot_sigma.value()
             settings["cal_cfa_chk"] = self.cal_cfa_chk.isChecked()
             settings["cal_eq_cfa_chk"] = self.cal_eq_cfa_chk.isChecked()
+            settings["cal_fix_xtrans"] = self.cal_fix_xtrans.isChecked()
+            settings["cal_dark_opt"] = self.cal_dark_opt.currentIndex()
             settings["cal_debayer_chk"] = self.cal_debayer_chk.isChecked()
             
             # Registration Tab
@@ -775,6 +832,10 @@ class PreprocessGUI(QMainWindow):
             settings["stk_rgb_eq"] = self.stk_rgb_eq.isChecked()
             settings["stk_out_norm"] = self.stk_out_norm.isChecked()
             settings["stk_32b"] = self.stk_32b.isChecked()
+            settings["stk_maximize"] = self.stk_maximize.isChecked()
+            settings["stk_overlap_norm"] = self.stk_overlap_norm.isChecked()
+            settings["stk_feather"] = self.stk_feather.value()
+            settings["stk_rej_map"] = self.stk_rej_map.currentIndex()
             settings["stk_bottomup_chk"] = self.stk_bottomup_chk.isChecked()
             
             # Filters
@@ -852,6 +913,8 @@ class PreprocessGUI(QMainWindow):
         set_chk(self.cal_cfa_chk, "cal_cfa_chk")
         set_chk(self.cal_eq_cfa_chk, "cal_eq_cfa_chk")
         set_chk(self.cal_debayer_chk, "cal_debayer_chk")
+        set_chk(self.cal_fix_xtrans, "cal_fix_xtrans")
+        set_idx(self.cal_dark_opt, "cal_dark_opt")
 
         # Registration Tab
         set_text(self.reg_seq_name, "reg_seq_name")
@@ -881,6 +944,10 @@ class PreprocessGUI(QMainWindow):
         set_chk(self.stk_rgb_eq, "stk_rgb_eq")
         set_chk(self.stk_out_norm, "stk_out_norm")
         set_chk(self.stk_32b, "stk_32b")
+        set_chk(self.stk_maximize, "stk_maximize")
+        set_chk(self.stk_overlap_norm, "stk_overlap_norm")
+        set_int(self.stk_feather, "stk_feather")
+        set_idx(self.stk_rej_map, "stk_rej_map")
         set_chk(self.stk_bottomup_chk, "stk_bottomup_chk")
 
         # Filters - Clear existing and add saved
@@ -1034,6 +1101,17 @@ class ScriptGenerator:
         if prefix:
             cmd += f" -prefix={prefix}"
             
+        # Fix X-Trans
+        if self.gui.cal_fix_xtrans.isChecked():
+            cmd += " -fix_xtrans"
+            
+        # Dark Optimization
+        opt_idx = self.gui.cal_dark_opt.currentIndex()
+        if opt_idx == 1: # Auto
+            cmd += " -opt"
+        elif opt_idx == 2: # Exp
+            cmd += " -opt=exp"
+
         lines.append(cmd)
         lines.append("")
 
@@ -1211,6 +1289,22 @@ class ScriptGenerator:
         out_file = self.gui.stk_out_name.text()
         if out_file: cmd += f" -out={out_file}"
         
+        # New options
+        if self.gui.stk_maximize.isChecked():
+            cmd += " -maximize"
+            if self.gui.stk_overlap_norm.isChecked():
+                cmd += " -overlap_norm"
+        
+        feather_val = self.gui.stk_feather.value()
+        if feather_val > 0:
+            cmd += f" -feather={feather_val}"
+            
+        rej_map_idx = self.gui.stk_rej_map.currentIndex()
+        if rej_map_idx == 1:
+            cmd += " -rejmap"
+        elif rej_map_idx == 2:
+            cmd += " -rejmaps"
+
         lines.append(cmd)
         lines.append("")
         
