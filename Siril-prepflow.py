@@ -371,6 +371,17 @@ class PreprocessGUI(QMainWindow):
         self.reg_maxstars.setValue(2000)
         gl_glo.addWidget(self.reg_maxstars, 2, 3)
 
+        # Undistortion (Moved here, but still hidden if Drizzle is checked in update_ui_states)
+        self.disto_widget = QWidget()
+        dist_layout = QHBoxLayout(self.disto_widget)
+        dist_layout.setContentsMargins(0, 0, 0, 0)
+        self.reg_disto_lbl = QLabel("Undistortion:")
+        self.reg_disto = QComboBox()
+        self.reg_disto.addItems(["None", "Apply (Image)", "From File", "From Masters"])
+        dist_layout.addWidget(self.reg_disto_lbl)
+        dist_layout.addWidget(self.reg_disto)
+        gl_glo.addWidget(self.disto_widget, 2, 0, 1, 2)
+
         layout.addWidget(grp_global)
 
         # Output / Formatting
@@ -430,19 +441,6 @@ class PreprocessGUI(QMainWindow):
         
         gl_fmt.addWidget(self.interp_widget, 1, 0, 1, 2)
 
-        # Undistortion (Visible only if NOT Drizzle)
-        self.disto_widget = QWidget() # Group for easy hiding
-        dist_layout = QHBoxLayout(self.disto_widget)
-        dist_layout.setContentsMargins(0,0,0,0)
-        
-        self.reg_disto_lbl = QLabel("Undistortion:")
-        self.reg_disto = QComboBox()
-        self.reg_disto.addItems(["None", "Apply (Image)", "From File", "From Masters"])
-        
-        dist_layout.addWidget(self.reg_disto_lbl)
-        dist_layout.addWidget(self.reg_disto)
-        
-        gl_fmt.addWidget(self.disto_widget, 2, 0, 1, 2)
 
         layout.addWidget(grp_fmt)
         
@@ -601,6 +599,7 @@ class PreprocessGUI(QMainWindow):
         gl_stitch.addWidget(QLabel("Feather:"), 0, 2)
         self.stk_feather = QSpinBox()
         self.stk_feather.setRange(0, 1000)
+        self.stk_feather.setSingleStep(10)
         self.stk_feather.setValue(0)
         self.stk_feather.setSuffix(" px")
         gl_stitch.addWidget(self.stk_feather, 0, 3)
@@ -669,6 +668,8 @@ class PreprocessGUI(QMainWindow):
         # Framing visible only if 2-pass
         if hasattr(self, 'grp_framing'):
             self.grp_framing.setVisible(pass2)
+            if not pass2:
+                self.reg_framing.setCurrentIndex(0)
 
         # Mutual Exclusivity Logic for Drizzle vs Debayer
         # If Drizzle is checked, prevent Debayer in Calibration
@@ -711,6 +712,10 @@ class PreprocessGUI(QMainWindow):
         # Image Stitching visibility depends on Registration Framing == Maximum (Index 1)
         is_max_framing = (self.reg_framing.currentIndex() == 1)
         self.grp_stitching.setVisible(is_max_framing)
+
+        if not is_max_framing:
+            self.stk_maximize.setChecked(False)
+            self.stk_feather.setValue(0)
 
         # Overlap Norm requires Maximize Framing
         maximize_checked = self.stk_maximize.isChecked()
