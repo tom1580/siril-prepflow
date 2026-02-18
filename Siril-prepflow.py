@@ -17,7 +17,7 @@ try:
                                  QPushButton, QCheckBox, QComboBox, QGroupBox,
                                  QGridLayout, QTextEdit, QFileDialog, QSpinBox,
                                  QDoubleSpinBox, QScrollArea, QMessageBox,
-                                 QTableWidget, QTableWidgetItem, QHeaderView) # Added missing imports from original
+                                 QTableWidget, QTableWidgetItem, QHeaderView, QFrame) # Added QFrame
     from PyQt6.QtCore import Qt
 except ImportError:
     # Fallback to ensure_installed if strictly necessary, but standard environment implies availability
@@ -321,7 +321,9 @@ class PreprocessGUI(QMainWindow):
 
     def create_registration_tab(self):
         tab = QWidget()
+        tab.setObjectName("tab_content")
         scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidgetResizable(True)
         content = QWidget()
         content.setObjectName("tab_content")
@@ -460,12 +462,15 @@ class PreprocessGUI(QMainWindow):
         
         # Add scroll to tab layout
         tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
         tab_layout.addWidget(scroll)
         self.tabs.addTab(tab, "Registration")
 
     def create_stacking_tab(self):
         tab = QWidget()
+        tab.setObjectName("tab_content")
         scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidgetResizable(True)
         content = QWidget()
         content.setObjectName("tab_content")
@@ -608,6 +613,7 @@ class PreprocessGUI(QMainWindow):
         layout.addStretch()
         
         tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
         tab_layout.addWidget(scroll)
         self.tabs.addTab(tab, "Stacking")
 
@@ -660,10 +666,6 @@ class PreprocessGUI(QMainWindow):
         
         # Interpolation visible if NOT drizzle
         self.interp_widget.setVisible(not drizzle)
-
-        # Distorsion visible if NOT drizzle
-        if hasattr(self, 'disto_widget'):
-            self.disto_widget.setVisible(not drizzle)
             
         # Framing visible only if 2-pass
         if hasattr(self, 'grp_framing'):
