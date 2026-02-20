@@ -17,7 +17,7 @@ try:
                                  QPushButton, QCheckBox, QComboBox, QGroupBox,
                                  QGridLayout, QTextEdit, QFileDialog, QSpinBox,
                                  QDoubleSpinBox, QScrollArea, QMessageBox,
-                                 QTableWidget, QTableWidgetItem, QHeaderView) # Added missing imports from original
+                                 QTableWidget, QTableWidgetItem, QHeaderView, QFrame) # Added QFrame
     from PyQt6.QtCore import Qt
 except ImportError:
     # Fallback to ensure_installed if strictly necessary, but standard environment implies availability
@@ -64,7 +64,7 @@ class PreprocessGUI(QMainWindow):
     def __init__(self, siril_app):
         super().__init__()
         self.siril = siril_app
-        self.setWindowTitle("Siril Preprocessing Flow v1.1")
+        self.setWindowTitle("Siril Preprocessing Flow v1.2")
         self.resize(610, 630)
         self.filters = []
 
@@ -232,6 +232,7 @@ class PreprocessGUI(QMainWindow):
         self.use_bias_chk = QCheckBox("Use Bias")
         self.use_bias_path = QLineEdit(f"{DIR_MASTERS}/bias_stacked.fit")
         self.use_bias_chk.toggled.connect(lambda c: self.use_bias_path.setEnabled(c))
+        self.use_bias_chk.toggled.connect(self.update_ui_states)
         self.use_bias_chk.setChecked(False) # Usually off if flats are calibrated
         self.use_bias_path.setEnabled(False)
         gl_mast.addWidget(self.use_bias_chk, 0, 0)
@@ -242,16 +243,33 @@ class PreprocessGUI(QMainWindow):
         self.use_dark_chk.setChecked(True)
         self.use_dark_path = QLineEdit(f"{DIR_MASTERS}/dark_stacked.fit")
         self.use_dark_chk.toggled.connect(lambda c: self.use_dark_path.setEnabled(c))
+        self.use_dark_chk.toggled.connect(self.update_ui_states)
         gl_mast.addWidget(self.use_dark_chk, 1, 0)
         gl_mast.addWidget(self.use_dark_path, 1, 1)
+
+        # Dark Opt (Nested under Dark)
+        opt_layout = QHBoxLayout()
+        opt_layout.setContentsMargins(10, 0, 0, 0) # Small indent within column 1 logic if needed, or just 0
+        opt_layout.setSpacing(5)
+        opt_layout.addWidget(QLabel("Dark Opt:"))
+        self.cal_dark_opt = QComboBox()
+        self.cal_dark_opt.addItems(["None", "Auto-evaluation", "Use Exposure"])
+        opt_layout.addWidget(self.cal_dark_opt)
+        opt_layout.addStretch()
+        gl_mast.addLayout(opt_layout, 2, 1)
 
         # Flat
         self.use_flat_chk = QCheckBox("Use Flat")
         self.use_flat_chk.setChecked(True)
         self.use_flat_path = QLineEdit(f"{DIR_MASTERS}/pp_flat_stacked.fit")
         self.use_flat_chk.toggled.connect(lambda c: self.use_flat_path.setEnabled(c))
-        gl_mast.addWidget(self.use_flat_chk, 2, 0)
-        gl_mast.addWidget(self.use_flat_path, 2, 1)
+        gl_mast.addWidget(self.use_flat_chk, 3, 0)
+        gl_mast.addWidget(self.use_flat_path, 3, 1)
+
+        self.cal_fix_xtrans = QCheckBox("Fix X-Trans Artifact")
+        self.cal_fix_xtrans.setToolTip("Fix Fujifilm X-Trans AF pixel patterns (requires dark or bias)")
+        gl_mast.addWidget(self.cal_fix_xtrans, 4, 0)
+
         layout.addWidget(grp_mast)
 
         # Correction & CFA
@@ -305,7 +323,9 @@ class PreprocessGUI(QMainWindow):
 
     def create_registration_tab(self):
         tab = QWidget()
+        tab.setObjectName("tab_content")
         scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidgetResizable(True)
         content = QWidget()
         content.setObjectName("tab_content")
@@ -354,6 +374,17 @@ class PreprocessGUI(QMainWindow):
         self.reg_maxstars.setRange(0, 20000)
         self.reg_maxstars.setValue(2000)
         gl_glo.addWidget(self.reg_maxstars, 2, 3)
+
+        # Undistortion (Moved here, but still hidden if Drizzle is checked in update_ui_states)
+        self.disto_widget = QWidget()
+        dist_layout = QHBoxLayout(self.disto_widget)
+        dist_layout.setContentsMargins(0, 0, 0, 0)
+        self.reg_disto_lbl = QLabel("Undistortion:")
+        self.reg_disto = QComboBox()
+        self.reg_disto.addItems(["None", "Apply (Image)", "From File", "From Masters"])
+        dist_layout.addWidget(self.reg_disto_lbl)
+        dist_layout.addWidget(self.reg_disto)
+        gl_glo.addWidget(self.disto_widget, 2, 0, 1, 2)
 
         layout.addWidget(grp_global)
 
@@ -414,19 +445,6 @@ class PreprocessGUI(QMainWindow):
         
         gl_fmt.addWidget(self.interp_widget, 1, 0, 1, 2)
 
-        # Undistortion (Visible only if NOT Drizzle)
-        self.disto_widget = QWidget() # Group for easy hiding
-        dist_layout = QHBoxLayout(self.disto_widget)
-        dist_layout.setContentsMargins(0,0,0,0)
-        
-        self.reg_disto_lbl = QLabel("Undistortion:")
-        self.reg_disto = QComboBox()
-        self.reg_disto.addItems(["None", "Apply (Image)", "From File", "From Masters"])
-        
-        dist_layout.addWidget(self.reg_disto_lbl)
-        dist_layout.addWidget(self.reg_disto)
-        
-        gl_fmt.addWidget(self.disto_widget, 2, 0, 1, 2)
 
         layout.addWidget(grp_fmt)
         
@@ -438,6 +456,7 @@ class PreprocessGUI(QMainWindow):
         gl_framing.addWidget(QLabel("Framing:"), 0, 0)
         self.reg_framing = QComboBox()
         self.reg_framing.addItems(["Current (Default)", "Max (Bounding Box)", "Min (Common Area)", "Center of Gravity"])
+        self.reg_framing.currentIndexChanged.connect(self.update_ui_states)
         gl_framing.addWidget(self.reg_framing, 0, 1)
         
         layout.addWidget(self.grp_framing)
@@ -445,12 +464,15 @@ class PreprocessGUI(QMainWindow):
         
         # Add scroll to tab layout
         tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
         tab_layout.addWidget(scroll)
         self.tabs.addTab(tab, "Registration")
 
     def create_stacking_tab(self):
         tab = QWidget()
+        tab.setObjectName("tab_content")
         scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidgetResizable(True)
         content = QWidget()
         content.setObjectName("tab_content")
@@ -476,9 +498,14 @@ class PreprocessGUI(QMainWindow):
         
         gl_meth.addWidget(QLabel("Method:"), 0, 0)
         self.stk_method = QComboBox()
-        self.stk_method.addItems(["Average with Rejection", "Sum", "Median", "Pixel Maximum"])
+        self.stk_method.addItems(["Average with Rejection", "Sum", "Median", "Pixel Maximum", "Pixel Minimum"])
         self.stk_method.currentIndexChanged.connect(self.update_ui_states)
         gl_meth.addWidget(self.stk_method, 0, 1)
+
+        gl_meth.addWidget(QLabel("Rejection Map:"), 0, 2)
+        self.stk_rej_map = QComboBox()
+        self.stk_rej_map.addItems(["None", "One Map (-rejmap)", "Two Maps (-rejmaps)"])
+        gl_meth.addWidget(self.stk_rej_map, 0, 3)
 
         self.stk_norm_lbl = QLabel("Normalization:")
         self.stk_norm = QComboBox()
@@ -561,9 +588,34 @@ class PreprocessGUI(QMainWindow):
         gl_opts.addWidget(self.stk_bottomup_chk, 1, 3)
 
         layout.addWidget(grp_opts)
+
+        # Image Stitching (Mosaicing) Options
+        self.grp_stitching = QGroupBox("Image Stitching")
+        gl_stitch = QGridLayout()
+        self.grp_stitching.setLayout(gl_stitch)
+
+        self.stk_maximize = QCheckBox("Maximize Framing")
+        self.stk_maximize.setToolTip("Encompass all images (required for overlap norm)")
+        self.stk_maximize.toggled.connect(self.update_ui_states)
+        gl_stitch.addWidget(self.stk_maximize, 0, 0)
+
+        self.stk_overlap_norm = QCheckBox("Overlap Normalization")
+        self.stk_overlap_norm.setToolTip("Compute norm on overlaps (requires Maximize Framing)")
+        gl_stitch.addWidget(self.stk_overlap_norm, 0, 1)
+
+        gl_stitch.addWidget(QLabel("Feather:"), 0, 2)
+        self.stk_feather = QSpinBox()
+        self.stk_feather.setRange(0, 1000)
+        self.stk_feather.setSingleStep(10)
+        self.stk_feather.setValue(0)
+        self.stk_feather.setSuffix(" px")
+        gl_stitch.addWidget(self.stk_feather, 0, 3)
+
+        layout.addWidget(self.grp_stitching)
         layout.addStretch()
         
         tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
         tab_layout.addWidget(scroll)
         self.tabs.addTab(tab, "Stacking")
 
@@ -594,6 +646,16 @@ class PreprocessGUI(QMainWindow):
             self.flat_synth_bias_lbl.setVisible(is_synth)
 
         # --- Calibration Tab ---
+        # Fix X-Trans requirement (Master Dark or Master Bias)
+        use_bias = self.use_bias_chk.isChecked()
+        use_dark = self.use_dark_chk.isChecked()
+        if use_bias or use_dark:
+            self.cal_fix_xtrans.setEnabled(True)
+        else:
+            self.cal_fix_xtrans.setEnabled(False)
+            self.cal_fix_xtrans.setChecked(False)
+            self.cal_fix_xtrans.setToolTip("Fix Fujifilm X-Trans AF pixel patterns (Requires master dark or master bias)")
+
         cc_idx = self.cal_cc_type.currentIndex()
         # 1 = Dark, 2 = BPM
         is_dark_cc = (cc_idx == 1)
@@ -616,14 +678,12 @@ class PreprocessGUI(QMainWindow):
         
         # Interpolation visible if NOT drizzle
         self.interp_widget.setVisible(not drizzle)
-
-        # Distorsion visible if NOT drizzle
-        if hasattr(self, 'disto_widget'):
-            self.disto_widget.setVisible(not drizzle)
             
         # Framing visible only if 2-pass
         if hasattr(self, 'grp_framing'):
             self.grp_framing.setVisible(pass2)
+            if not pass2:
+                self.reg_framing.setCurrentIndex(0)
 
         # Mutual Exclusivity Logic for Drizzle vs Debayer
         # If Drizzle is checked, prevent Debayer in Calibration
@@ -662,6 +722,20 @@ class PreprocessGUI(QMainWindow):
         self.stk_weight.setVisible(is_rej)
         self.stk_weight_lbl.setVisible(is_rej)
         self.stk_filters_group.setVisible(is_rej)
+
+        # Image Stitching visibility depends on Registration Framing == Maximum (Index 1)
+        is_max_framing = (self.reg_framing.currentIndex() == 1)
+        self.grp_stitching.setVisible(is_max_framing)
+
+        if not is_max_framing:
+            self.stk_maximize.setChecked(False)
+            self.stk_feather.setValue(0)
+
+        # Overlap Norm requires Maximize Framing
+        maximize_checked = self.stk_maximize.isChecked()
+        self.stk_overlap_norm.setEnabled(maximize_checked)
+        if not maximize_checked:
+            self.stk_overlap_norm.setChecked(False)
 
     def add_filter_row(self):
         row_widget = FilterRowWidget(on_delete=self.remove_filter_row)
@@ -745,6 +819,8 @@ class PreprocessGUI(QMainWindow):
             settings["cal_hot_sigma"] = self.cal_hot_sigma.value()
             settings["cal_cfa_chk"] = self.cal_cfa_chk.isChecked()
             settings["cal_eq_cfa_chk"] = self.cal_eq_cfa_chk.isChecked()
+            settings["cal_fix_xtrans"] = self.cal_fix_xtrans.isChecked()
+            settings["cal_dark_opt"] = self.cal_dark_opt.currentIndex()
             settings["cal_debayer_chk"] = self.cal_debayer_chk.isChecked()
             
             # Registration Tab
@@ -775,6 +851,10 @@ class PreprocessGUI(QMainWindow):
             settings["stk_rgb_eq"] = self.stk_rgb_eq.isChecked()
             settings["stk_out_norm"] = self.stk_out_norm.isChecked()
             settings["stk_32b"] = self.stk_32b.isChecked()
+            settings["stk_maximize"] = self.stk_maximize.isChecked()
+            settings["stk_overlap_norm"] = self.stk_overlap_norm.isChecked()
+            settings["stk_feather"] = self.stk_feather.value()
+            settings["stk_rej_map"] = self.stk_rej_map.currentIndex()
             settings["stk_bottomup_chk"] = self.stk_bottomup_chk.isChecked()
             
             # Filters
@@ -852,6 +932,8 @@ class PreprocessGUI(QMainWindow):
         set_chk(self.cal_cfa_chk, "cal_cfa_chk")
         set_chk(self.cal_eq_cfa_chk, "cal_eq_cfa_chk")
         set_chk(self.cal_debayer_chk, "cal_debayer_chk")
+        set_chk(self.cal_fix_xtrans, "cal_fix_xtrans")
+        set_idx(self.cal_dark_opt, "cal_dark_opt")
 
         # Registration Tab
         set_text(self.reg_seq_name, "reg_seq_name")
@@ -881,6 +963,10 @@ class PreprocessGUI(QMainWindow):
         set_chk(self.stk_rgb_eq, "stk_rgb_eq")
         set_chk(self.stk_out_norm, "stk_out_norm")
         set_chk(self.stk_32b, "stk_32b")
+        set_chk(self.stk_maximize, "stk_maximize")
+        set_chk(self.stk_overlap_norm, "stk_overlap_norm")
+        set_int(self.stk_feather, "stk_feather")
+        set_idx(self.stk_rej_map, "stk_rej_map")
         set_chk(self.stk_bottomup_chk, "stk_bottomup_chk")
 
         # Filters - Clear existing and add saved
@@ -1034,6 +1120,17 @@ class ScriptGenerator:
         if prefix:
             cmd += f" -prefix={prefix}"
             
+        # Fix X-Trans
+        if self.gui.cal_fix_xtrans.isChecked():
+            cmd += " -fix_xtrans"
+            
+        # Dark Optimization
+        opt_idx = self.gui.cal_dark_opt.currentIndex()
+        if opt_idx == 1: # Auto
+            cmd += " -opt"
+        elif opt_idx == 2: # Exp
+            cmd += " -opt=exp"
+
         lines.append(cmd)
         lines.append("")
 
@@ -1211,6 +1308,22 @@ class ScriptGenerator:
         out_file = self.gui.stk_out_name.text()
         if out_file: cmd += f" -out={out_file}"
         
+        # New options
+        if self.gui.stk_maximize.isChecked():
+            cmd += " -maximize"
+            if self.gui.stk_overlap_norm.isChecked():
+                cmd += " -overlap_norm"
+        
+        feather_val = self.gui.stk_feather.value()
+        if feather_val > 0:
+            cmd += f" -feather={feather_val}"
+            
+        rej_map_idx = self.gui.stk_rej_map.currentIndex()
+        if rej_map_idx == 1:
+            cmd += " -rejmap"
+        elif rej_map_idx == 2:
+            cmd += " -rejmaps"
+
         lines.append(cmd)
         lines.append("")
         
