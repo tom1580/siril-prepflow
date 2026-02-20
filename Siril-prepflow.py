@@ -232,6 +232,7 @@ class PreprocessGUI(QMainWindow):
         self.use_bias_chk = QCheckBox("Use Bias")
         self.use_bias_path = QLineEdit(f"{DIR_MASTERS}/bias_stacked.fit")
         self.use_bias_chk.toggled.connect(lambda c: self.use_bias_path.setEnabled(c))
+        self.use_bias_chk.toggled.connect(self.update_ui_states)
         self.use_bias_chk.setChecked(False) # Usually off if flats are calibrated
         self.use_bias_path.setEnabled(False)
         gl_mast.addWidget(self.use_bias_chk, 0, 0)
@@ -242,6 +243,7 @@ class PreprocessGUI(QMainWindow):
         self.use_dark_chk.setChecked(True)
         self.use_dark_path = QLineEdit(f"{DIR_MASTERS}/dark_stacked.fit")
         self.use_dark_chk.toggled.connect(lambda c: self.use_dark_path.setEnabled(c))
+        self.use_dark_chk.toggled.connect(self.update_ui_states)
         gl_mast.addWidget(self.use_dark_chk, 1, 0)
         gl_mast.addWidget(self.use_dark_path, 1, 1)
 
@@ -644,6 +646,16 @@ class PreprocessGUI(QMainWindow):
             self.flat_synth_bias_lbl.setVisible(is_synth)
 
         # --- Calibration Tab ---
+        # Fix X-Trans requirement (Master Dark or Master Bias)
+        use_bias = self.use_bias_chk.isChecked()
+        use_dark = self.use_dark_chk.isChecked()
+        if use_bias or use_dark:
+            self.cal_fix_xtrans.setEnabled(True)
+        else:
+            self.cal_fix_xtrans.setEnabled(False)
+            self.cal_fix_xtrans.setChecked(False)
+            self.cal_fix_xtrans.setToolTip("Fix Fujifilm X-Trans AF pixel patterns (Requires master dark or master bias)")
+
         cc_idx = self.cal_cc_type.currentIndex()
         # 1 = Dark, 2 = BPM
         is_dark_cc = (cc_idx == 1)
