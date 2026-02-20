@@ -516,6 +516,7 @@ class PreprocessGUI(QMainWindow):
         self.stk_rej_lbl = QLabel("Rejection:")
         self.stk_rej_algo = QComboBox()
         self.stk_rej_algo.addItems(["Sigma Clipping", "Winsorized Sigma Clipping", "MAD Clipping", "Percentile Clipping", "Generalized ESD", "Linear Fit Clipping", "None"])
+        self.stk_rej_algo.currentIndexChanged.connect(self.update_ui_states)
         gl_meth.addWidget(self.stk_rej_lbl, 2, 0)
         gl_meth.addWidget(self.stk_rej_algo, 2, 1)
 
@@ -711,14 +712,17 @@ class PreprocessGUI(QMainWindow):
         method_idx = self.stk_method.currentIndex() # 0=AvgRej, 1=Sum, 2=Median, 3=Max
         is_rej = (method_idx == 0)
         
+        rej_idx = self.stk_rej_algo.currentIndex()
+        is_none_rej = (rej_idx == 6) # None is at index 6
+
         self.stk_rej_algo.setVisible(is_rej)
         self.stk_rej_lbl.setVisible(is_rej)
         self.stk_norm.setVisible(is_rej) # Normalization also usually only for Avg+Rej
         self.stk_norm_lbl.setVisible(is_rej)
-        self.stk_sigma_low.setVisible(is_rej)
-        self.stk_sigma_low_lbl.setVisible(is_rej)
-        self.stk_sigma_high.setVisible(is_rej)
-        self.stk_sigma_high_lbl.setVisible(is_rej)
+        self.stk_sigma_low.setVisible(is_rej and not is_none_rej)
+        self.stk_sigma_low_lbl.setVisible(is_rej and not is_none_rej)
+        self.stk_sigma_high.setVisible(is_rej and not is_none_rej)
+        self.stk_sigma_high_lbl.setVisible(is_rej and not is_none_rej)
         self.stk_weight.setVisible(is_rej)
         self.stk_weight_lbl.setVisible(is_rej)
         self.stk_filters_group.setVisible(is_rej)
@@ -1249,14 +1253,16 @@ class ScriptGenerator:
         cmd = f"stack {stk_seq}{meth_cmd}"
         
         if meth_idx == 0: # Rejection Only
-            # Sigma, Winsorized, MAD, Percentile, GESD, Linear
-            # s, w, a, p, g, l
-            algo_map = {0: "s", 1: "w", 2: "a", 3: "p", 4: "g", 5: "l", 6: ""}
-            algo_char = algo_map.get(self.gui.stk_rej_algo.currentIndex(), "")
-            if algo_char:
+            # Sigma, Winsorized, MAD, Percentile, GESD, Linear, None
+            # s, w, a, p, g, l, n
+            algo_map = {0: "s", 1: "w", 2: "a", 3: "p", 4: "g", 5: "l", 6: "n"}
+            algo_char = algo_map.get(self.gui.stk_rej_algo.currentIndex(), "n")
+            if algo_char and algo_char != "n":
                 sl = self.gui.stk_sigma_low.value()
                 sh = self.gui.stk_sigma_high.value()
                 cmd += f" {algo_char} {sl} {sh}"
+            elif algo_char == "n":
+                cmd += f" {algo_char}"
 
             # Normalization
             # 0=Add+Scale, 1=None, 2=Add, 3=Mul, 4=MulScale
