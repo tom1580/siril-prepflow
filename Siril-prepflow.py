@@ -8,10 +8,14 @@ from enum import Enum
 from sirilpy.connection import SirilInterface
 from sirilpy.exceptions import SirilError, CommandError
 
-# Import PyQt6
+# Import PyQt6 with auto-install fallback
+import subprocess
+
+def install_package(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
 try:
     import json
-    import subprocess
     from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                  QHBoxLayout, QTabWidget, QLabel, QLineEdit,
                                  QPushButton, QCheckBox, QComboBox, QGroupBox,
@@ -20,10 +24,22 @@ try:
                                  QTableWidget, QTableWidgetItem, QHeaderView, QFrame) # Added QFrame
     from PyQt6.QtCore import Qt
 except ImportError:
-    # Fallback to ensure_installed if strictly necessary, but standard environment implies availability
-    # For now, just print error if not available (should be handled by environment)
-    print("PyQt6 is required. Please install it.")
-    sys.exit(1)
+    print("PyQt6 is not installed. Installing PyQt6 automatically...")
+    try:
+        install_package("PyQt6")
+        import json
+        from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                                     QHBoxLayout, QTabWidget, QLabel, QLineEdit,
+                                     QPushButton, QCheckBox, QComboBox, QGroupBox,
+                                     QGridLayout, QTextEdit, QFileDialog, QSpinBox,
+                                     QDoubleSpinBox, QScrollArea, QMessageBox,
+                                     QTableWidget, QTableWidgetItem, QHeaderView, QFrame)
+        from PyQt6.QtCore import Qt
+        print("PyQt6 successfully installed.")
+    except Exception as e:
+        print(f"Failed to install PyQt6 automatically: {e}")
+        print("Please install PyQt6 manually using: pip install PyQt6")
+        sys.exit(1)
 
 # --- Constants for Folder Names ---
 DIR_BIASES = "biases"
