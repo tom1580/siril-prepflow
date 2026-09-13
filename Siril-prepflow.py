@@ -553,7 +553,7 @@ class PreprocessGUI(QMainWindow):
         rad_l.setContentsMargins(0, 0, 0, 0)
         rad_l.addWidget(QLabel("Radius (deg):"))
         self.reg_ps_radius = QDoubleSpinBox()
-        self.reg_ps_radius.setRange(0.1, 180.0)
+        self.reg_ps_radius.setRange(0, 30.0)
         self.reg_ps_radius.setValue(10.0)
         self.reg_ps_radius.setSingleStep(1.0)
         self.reg_ps_radius.setToolTip("Search radius in degrees (-radius=)")
@@ -1434,7 +1434,9 @@ class ScriptGenerator:
 
         # Logic
         if pass2:
-            lines.append(f"register {reg_seq} -2pass{layer_cmd} -minpairs={minpairs} -maxstars={maxstars}")
+            # seqplatesolve が有効な場合は register 行を出力しない
+            if not self.gui.reg_platesolve_chk.isChecked():
+                lines.append(f"register {reg_seq} -2pass{layer_cmd} -minpairs={minpairs} -maxstars={maxstars}")
             
             # seqapplyreg
             apply_cmd = f"seqapplyreg {reg_seq}"
@@ -1615,3 +1617,4 @@ def run_app():
 
 if __name__ == "__main__":
     run_app()
+
