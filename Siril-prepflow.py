@@ -41,6 +41,25 @@ except ImportError:
         print("Please install PyQt6 manually using: pip install PyQt6")
         sys.exit(1)
 
+def resolve_target_coordinates(target_name):
+    """Resolve astronomical target name to RA, Dec in decimal degrees using astropy."""
+    try:
+        from astropy.coordinates import SkyCoord
+    except ImportError:
+        try:
+            install_package("astropy")
+            from astropy.coordinates import SkyCoord
+        except Exception as e:
+            return None, f"Failed to install astropy: {e}"
+    try:
+        coord = SkyCoord.from_name(target_name.strip())
+        # Siril accepts decimal degrees: RA Dec separated by a space or comma
+        ra_deg = f"{coord.ra.deg:.5f}"
+        dec_deg = f"{coord.dec.deg:.5f}"
+        return f"{ra_deg} {dec_deg}", None
+    except Exception as e:
+        return None, str(e)
+
 # --- Constants for Folder Names ---
 DIR_BIASES = "biases"
 DIR_FLATS  = "flats"
@@ -80,7 +99,7 @@ class PreprocessGUI(QMainWindow):
     def __init__(self, siril_app):
         super().__init__()
         self.siril = siril_app
-        self.setWindowTitle("Siril Preprocessing Flow v1.2")
+        self.setWindowTitle("prepflow v1.3")
         self.resize(610, 630)
         self.filters = []
 
@@ -461,21 +480,125 @@ class PreprocessGUI(QMainWindow):
         
         gl_fmt.addWidget(self.interp_widget, 1, 0, 1, 2)
 
-
-        layout.addWidget(grp_fmt)
-        
-        # Framing (Separate Group, visible only for 2-pass)
-        self.grp_framing = QGroupBox("Output Registration")
-        gl_framing = QGridLayout()
-        self.grp_framing.setLayout(gl_framing)
-        
-        gl_framing.addWidget(QLabel("Framing:"), 0, 0)
+        # Framing (visible only for 2-pass)
+        self.reg_framing_widget = QWidget()
+        fl = QHBoxLayout(self.reg_framing_widget)
+        fl.setContentsMargins(0, 5, 0, 0)
+        fl.addWidget(QLabel("Framing:"))
         self.reg_framing = QComboBox()
         self.reg_framing.addItems(["Current (Default)", "Max (Bounding Box)", "Min (Common Area)", "Center of Gravity"])
         self.reg_framing.currentIndexChanged.connect(self.update_ui_states)
-        gl_framing.addWidget(self.reg_framing, 0, 1)
-        
-        layout.addWidget(self.grp_framing)
+        fl.addWidget(self.reg_framing)
+        fl.addStretch()
+        gl_fmt.addWidget(self.reg_framing_widget, 2, 0, 1, 6)
+
+        layout.addWidget(grp_fmt)
+
+        # Plate Solve (New separate group, visible only for 2-pass)
+        self.grp_platesolve = QGroupBox("Plate Solve Sequence")
+        ps_main_l = QVBoxLayout(self.grp_platesolve)
+
+        self.reg_platesolve_chk = QCheckBox("Enable Plate Solve (seqplatesolve)")
+        self.reg_platesolve_chk.setToolTip("Plate solve the calibrated sequence before registration (useful for mosaic stitching)")
+        self.reg_platesolve_chk.toggled.connect(self.update_ui_states)
+        ps_main_l.addWidget(self.reg_platesolve_chk)
+
+        self.reg_platesolve_opts_widget = QWidget()
+        ps_grid = QGridLayout(self.reg_platesolve_opts_widget)
+        ps_grid.setContentsMargins(15, 5, 0, 0)
+
+        # Target Name & Coordinates
+        ps_grid.addWidget(QLabel("Target Name:"), 0, 0)
+        self.reg_ps_target = QLineEdit()
+        self.reg_ps_target.setPlaceholderText("e.g. M42, NGC7000, M31")
+        self.reg_ps_target.setToolTip("Object name to query RA/Dec using astropy")
+        ps_grid.addWidget(self.reg_ps_target, 0, 1)
+
+        self.reg_ps_resolve_btn = QPushButton("Resolve")
+        self.reg_ps_resolve_btn.setToolTip("Query coordinates using astropy")
+        self.reg_ps_resolve_btn.clicked.connect(self.on_resolve_target_clicked)
+        ps_grid.addWidget(self.reg_ps_resolve_btn, 0, 2)
+
+        ps_grid.addWidget(QLabel("Center Coords:"), 0, 3)
+        self.reg_ps_coords = QLineEdit()
+        self.reg_ps_coords.setPlaceholderText("RA Dec in deg (e.g. 83.82208 -5.39111)")
+        self.reg_ps_coords.setToolTip("Image center coordinates (decimal degrees). Auto-filled when a target name is resolved.")
+        ps_grid.addWidget(self.reg_ps_coords, 0, 4, 1, 2)
+
+        # Focal & Pixelsize
+        ps_grid.addWidget(QLabel("Focal length (mm):"), 1, 0)
+        self.reg_ps_focal = QDoubleSpinBox()
+        self.reg_ps_focal.setRange(0.0, 50000.0)
+        self.reg_ps_focal.setSingleStep(10.0)
+        self.reg_ps_focal.setValue(0.0)
+        self.reg_ps_focal.setToolTip("Telescope/Lens focal length in mm (-focal=). Set 0 to omit.")
+        ps_grid.addWidget(self.reg_ps_focal, 1, 1)
+
+        ps_grid.addWidget(QLabel("Pixel size (µm):"), 1, 3)
+        self.reg_ps_pixelsize = QDoubleSpinBox()
+        self.reg_ps_pixelsize.setRange(0.0, 100.0)
+        self.reg_ps_pixelsize.setSingleStep(0.1)
+        self.reg_ps_pixelsize.setValue(0.0)
+        self.reg_ps_pixelsize.setToolTip("Sensor pixel size in µm (-pixelsize=). Set 0 to omit.")
+        ps_grid.addWidget(self.reg_ps_pixelsize, 1, 4)
+
+        # Radius & Disable Near Search
+        self.reg_ps_disable_near = QCheckBox("Disable near search")
+        self.reg_ps_disable_near.setToolTip("Check to disable near search (omits -radius= option)")
+        self.reg_ps_disable_near.toggled.connect(self.update_ui_states)
+        ps_grid.addWidget(self.reg_ps_disable_near, 2, 0, 1, 2)
+
+        self.reg_ps_radius_widget = QWidget()
+        rad_l = QHBoxLayout(self.reg_ps_radius_widget)
+        rad_l.setContentsMargins(0, 0, 0, 0)
+        rad_l.addWidget(QLabel("Radius (deg):"))
+        self.reg_ps_radius = QDoubleSpinBox()
+        self.reg_ps_radius.setRange(0.1, 180.0)
+        self.reg_ps_radius.setValue(10.0)
+        self.reg_ps_radius.setSingleStep(1.0)
+        self.reg_ps_radius.setToolTip("Search radius in degrees (-radius=)")
+        rad_l.addWidget(self.reg_ps_radius)
+        rad_l.addStretch()
+        ps_grid.addWidget(self.reg_ps_radius_widget, 2, 2, 1, 3)
+
+        # Flags: downscale, force, noreg
+        flags_widget = QWidget()
+        fl_layout = QHBoxLayout(flags_widget)
+        fl_layout.setContentsMargins(0, 0, 0, 0)
+        self.reg_ps_downscale = QCheckBox("-downscale")
+        self.reg_ps_downscale.setToolTip("Downscale image for faster star detection")
+        self.reg_ps_force = QCheckBox("-force")
+        self.reg_ps_force.setToolTip("Force plate solve even if already solved")
+        self.reg_ps_noreg = QCheckBox("-noreg")
+        self.reg_ps_noreg.setToolTip("Do not register images after plate solving")
+        fl_layout.addWidget(self.reg_ps_downscale)
+        fl_layout.addWidget(self.reg_ps_force)
+        fl_layout.addWidget(self.reg_ps_noreg)
+        fl_layout.addStretch()
+        ps_grid.addWidget(flags_widget, 3, 0, 1, 6)
+
+        # Order, Catalog, Limitmag
+        ps_grid.addWidget(QLabel("Order:"), 4, 0)
+        self.reg_ps_order = QComboBox()
+        self.reg_ps_order.addItems(["linear", "quadratic", "cubic/SIP", "quartic", "quintic"])
+        self.reg_ps_order.setCurrentIndex(2) # Default to cubic/SIP (order=3)
+        self.reg_ps_order.setToolTip("Astrometric reduction polynomial order 1-5 (-order=)")
+        ps_grid.addWidget(self.reg_ps_order, 4, 1)
+
+        ps_grid.addWidget(QLabel("Catalog:"), 4, 2)
+        self.reg_ps_catalog = QComboBox()
+        self.reg_ps_catalog.addItems(["auto", "gaia", "nomad", "ppmxl", "bright", "apass", "tycho2"])
+        self.reg_ps_catalog.setToolTip("Astrometric catalog (-catalog=). 'auto' omits this option.")
+        ps_grid.addWidget(self.reg_ps_catalog, 4, 3)
+
+        ps_grid.addWidget(QLabel("Limit mag:"), 4, 4)
+        self.reg_ps_limitmag = QComboBox()
+        self.reg_ps_limitmag.addItems(["auto", "10", "12", "14", "16", "18", "20"])
+        self.reg_ps_limitmag.setToolTip("Magnitude limit for catalog stars (-limitmag=). 'auto' omits this option.")
+        ps_grid.addWidget(self.reg_ps_limitmag, 4, 5)
+
+        ps_main_l.addWidget(self.reg_platesolve_opts_widget)
+        layout.addWidget(self.grp_platesolve)
         layout.addStretch()
         
         # Add scroll to tab layout
@@ -696,11 +819,24 @@ class PreprocessGUI(QMainWindow):
         # Interpolation visible if NOT drizzle
         self.interp_widget.setVisible(not drizzle)
             
-        # Framing visible only if 2-pass
-        if hasattr(self, 'grp_framing'):
-            self.grp_framing.setVisible(pass2)
+        # Framing & Plate Solve visible only if 2-pass
+        if hasattr(self, 'reg_framing_widget'):
+            self.reg_framing_widget.setVisible(pass2)
             if not pass2:
                 self.reg_framing.setCurrentIndex(0)
+
+        if hasattr(self, 'grp_platesolve'):
+            self.grp_platesolve.setVisible(pass2)
+            if not pass2:
+                self.reg_platesolve_chk.setChecked(False)
+            # Options widget is visible only if plate solve checkbox is checked
+            platesolve = self.reg_platesolve_chk.isChecked()
+            self.reg_platesolve_opts_widget.setVisible(pass2 and platesolve)
+
+            # Radius widget is visible only if disable near search is unchecked
+            if hasattr(self, 'reg_ps_disable_near'):
+                disable_near = self.reg_ps_disable_near.isChecked()
+                self.reg_ps_radius_widget.setVisible(not disable_near)
 
         # Mutual Exclusivity Logic for Drizzle vs Debayer
         # If Drizzle is checked, prevent Debayer in Calibration
@@ -768,6 +904,20 @@ class PreprocessGUI(QMainWindow):
             self.filters.remove(row_widget)
             self.filter_layout.removeWidget(row_widget)
             row_widget.deleteLater()
+
+    def on_resolve_target_clicked(self):
+        target = self.reg_ps_target.text().strip()
+        if not target:
+            QMessageBox.warning(self, "Resolve Coordinates", "Please enter a target name.")
+            return
+        self.statusBar().showMessage(f"Resolving coordinates for '{target}'...")
+        coords, err = resolve_target_coordinates(target)
+        if coords:
+            self.reg_ps_coords.setText(coords)
+            self.statusBar().showMessage(f"Resolved '{target}': {coords}", 5000)
+        else:
+            self.statusBar().showMessage(f"Failed to resolve '{target}'", 5000)
+            QMessageBox.warning(self, "Resolve Coordinates Failed", f"Could not find coordinates for '{target}'.\nError: {err}")
 
     def generate_script(self):
         generator = ScriptGenerator(self)
@@ -858,6 +1008,19 @@ class PreprocessGUI(QMainWindow):
             settings["reg_interp"] = self.reg_interp.currentIndex()
             settings["reg_disto"] = self.reg_disto.currentIndex()
             settings["reg_framing"] = self.reg_framing.currentIndex()
+            settings["reg_platesolve_chk"] = self.reg_platesolve_chk.isChecked()
+            settings["reg_ps_target"] = self.reg_ps_target.text()
+            settings["reg_ps_coords"] = self.reg_ps_coords.text()
+            settings["reg_ps_focal"] = self.reg_ps_focal.value()
+            settings["reg_ps_pixelsize"] = self.reg_ps_pixelsize.value()
+            settings["reg_ps_disable_near"] = self.reg_ps_disable_near.isChecked()
+            settings["reg_ps_radius"] = self.reg_ps_radius.value()
+            settings["reg_ps_downscale"] = self.reg_ps_downscale.isChecked()
+            settings["reg_ps_force"] = self.reg_ps_force.isChecked()
+            settings["reg_ps_noreg"] = self.reg_ps_noreg.isChecked()
+            settings["reg_ps_order"] = self.reg_ps_order.currentIndex()
+            settings["reg_ps_catalog"] = self.reg_ps_catalog.currentIndex()
+            settings["reg_ps_limitmag"] = self.reg_ps_limitmag.currentIndex()
 
             # Stacking Tab
             settings["stk_seq_name"] = self.stk_seq_name.text()
@@ -970,6 +1133,19 @@ class PreprocessGUI(QMainWindow):
         set_idx(self.reg_interp, "reg_interp")
         set_idx(self.reg_disto, "reg_disto")
         set_idx(self.reg_framing, "reg_framing")
+        set_chk(self.reg_platesolve_chk, "reg_platesolve_chk")
+        set_text(self.reg_ps_target, "reg_ps_target")
+        set_text(self.reg_ps_coords, "reg_ps_coords")
+        set_float(self.reg_ps_focal, "reg_ps_focal")
+        set_float(self.reg_ps_pixelsize, "reg_ps_pixelsize")
+        set_chk(self.reg_ps_disable_near, "reg_ps_disable_near")
+        set_float(self.reg_ps_radius, "reg_ps_radius")
+        set_chk(self.reg_ps_downscale, "reg_ps_downscale")
+        set_chk(self.reg_ps_force, "reg_ps_force")
+        set_chk(self.reg_ps_noreg, "reg_ps_noreg")
+        set_idx(self.reg_ps_order, "reg_ps_order")
+        set_idx(self.reg_ps_catalog, "reg_ps_catalog")
+        set_idx(self.reg_ps_limitmag, "reg_ps_limitmag")
 
         # Stacking Tab
         set_text(self.stk_seq_name, "stk_seq_name")
@@ -1154,11 +1330,65 @@ class ScriptGenerator:
         lines.append(cmd)
         lines.append("")
 
+        reg_seq = self.gui.reg_seq_name.text() # typically pp_light
+        pass2 = self.gui.reg_2pass_chk.isChecked()
+
+        # ----------------------------------------------------
+        # PLATE SOLVE (Optional for 2-pass / Mosaic)
+        # ----------------------------------------------------
+        if pass2 and self.gui.reg_platesolve_chk.isChecked():
+            lines.append("# --- Plate Solve ---")
+            ps_parts = [f"seqplatesolve {reg_seq}"]
+            
+            # Center coordinates (from target resolution or manual input)
+            coords = self.gui.reg_ps_coords.text().strip()
+            if coords:
+                ps_parts.append(coords)
+                
+            # Focal length & Pixel size
+            focal = self.gui.reg_ps_focal.value()
+            if focal > 0:
+                ps_parts.append(f"-focal={focal:g}")
+            pixsize = self.gui.reg_ps_pixelsize.value()
+            if pixsize > 0:
+                ps_parts.append(f"-pixelsize={pixsize:g}")
+                
+            # Search Radius / Disable Near Search
+            if not self.gui.reg_ps_disable_near.isChecked():
+                rad = self.gui.reg_ps_radius.value()
+                ps_parts.append(f"-radius={rad:g}")
+                
+            # Flags: downscale, force, noreg
+            if self.gui.reg_ps_downscale.isChecked():
+                ps_parts.append("-downscale")
+            if self.gui.reg_ps_force.isChecked():
+                ps_parts.append("-force")
+            if self.gui.reg_ps_noreg.isChecked():
+                ps_parts.append("-noreg")
+                
+            # Order (1-5)
+            # currentIndex: 0->1(linear), 1->2(quadratic), 2->3(cubic/SIP), 3->4(quartic), 4->5(quintic)
+            order_idx = self.gui.reg_ps_order.currentIndex()
+            order_val = order_idx + 1 if 0 <= order_idx <= 4 else 3
+            ps_parts.append(f"-order={order_val}")
+                
+            # Catalog (auto means omit)
+            cat = self.gui.reg_ps_catalog.currentText().strip().lower()
+            if cat and cat != "auto":
+                ps_parts.append(f"-catalog={cat}")
+                
+            # Limit magnitude (auto means omit)
+            lmag = self.gui.reg_ps_limitmag.currentText().strip()
+            if lmag and lmag.lower() != "auto":
+                ps_parts.append(f"-limitmag={lmag}")
+                
+            lines.append(" ".join(ps_parts))
+            lines.append("")
+
         # ----------------------------------------------------
         # REGISTRATION
         # ----------------------------------------------------
         lines.append("# --- Registration ---")
-        reg_seq = self.gui.reg_seq_name.text() # typically pp_light
         prefix = self.gui.reg_prefix.text()
         
         transf_map = {0: "homography", 1: "affine", 2: "similarity", 3: "euclidean", 4: "shift"}
