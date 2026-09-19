@@ -12,33 +12,33 @@ It helps you configure **conversion, calibration, registration, and stacking** s
 
 ### Features / 主な機能
 
-- **Automated Workflow**
-  - Traditionally, GUI operations required manual execution of each step (Convert, Calibration, Registration, Stack).
-  - Even with automated scripts, users often had to manually edit the script code.
-  - **Single-Click Execution:** This tool enables fully automated execution of the entire workflow via an intuitive GUI.
+- **Automated Workflow / 一連の流れを自動化**
+  - Traditionally, GUI operations required manual execution of each step (Convert, Calibration, Registration, Stack).  
+    従来の GUI 操作では、Convert, Calibration, Registration, Stack をそれぞれ手動で実行する必要がありました。
+    
+  - Even with automated scripts, users often had to manually edit the script code.  
+    従来の GUI 操作では、Convert, Calibration, Registration, Stack をそれぞれ手動で実行する必要がありました。
+    
+  - **Single-Click Execution:** This tool enables fully automated execution of the entire workflow via an intuitive GUI.  
+    **GUI で完結:** 本ツールは、GUI 操作だけでこれらの一連の工程をすべて自動実行できます。
 
-- **一連の流れを自動化**
-  - 従来の GUI 操作では、Convert, Calibration, Registration, Stack をそれぞれ手動で実行する必要がありました。
-  - スクリプトで自動化する場合でも、従来はコードを直接書き換える手間がありました。
-  - **GUI で完結:** 本ツールは、GUI 操作だけでこれらの一連の工程をすべて自動実行できます。
 
-- **Support for Full Preprocessing Flow**
-  - GUI tabs for **Convert**, **Calibration**, **Registration**, and **Stacking**.
-  - Automatic master frame creation (Bias, Dark, Flat).
-  - Advanced options: Drizzle, image rejection filters, and quality-based weighting.
+- **Support for Full Preprocessing Flow / 前処理工程をフルサポート**
+  - GUI tabs for **Convert**, **Calibration**, **Registration**, and **Stacking**.  
+    **Convert / Calibration / Registration / Stacking** 用の専用タブ。
+    
+  - Automatic master frame creation (Bias, Dark, Flat).  
+    マスターフレーム（Bias, Dark, Flat）の自動生成。
+    
+  - Advanced options: Drizzle, image rejection filters, and quality-based weighting.  
+    ドリズル対応、リジェクトアルゴリズム、品質ベースの重み付けなど高度な設定も可能。
 
-- **前処理工程をフルサポート**
-  - **Convert / Calibration / Registration / Stacking** 用の専用タブ。
-  - マスターフレーム（Bias, Dark, Flat）の自動生成。
-  - ドリズル対応、リジェクトアルゴリズム、品質ベースの重み付けなど高度な設定も可能。
-
-- **Settings Preservation**
-  - **Remember Settings:** Automatically saves your configurations to `settings.json` upon closing and restores them on the next launch.
-  - This prevents repetitive manual entry of paths and parameters.
-
-- **設定の保存機能**
-  - **設定の自動保存:** 終了時に設定を `settings.json` に自動保存し、次回起動時に復元します。
-  - パスやパラメータを毎回入力し直す手間を省けます。
+- **Settings Preservation / 設定の保存機能**
+  - **Remember Settings:** Automatically saves your configurations to `settings.json` upon closing and restores them on the next launch.  
+    **設定の自動保存:** 終了時に設定を `settings.json` に自動保存し、次回起動時に復元します。
+  
+  - This prevents repetitive manual entry of paths and parameters.  
+    パスやパラメータを毎回入力し直す手間を省けます。
 
 ---
 
@@ -50,26 +50,18 @@ It helps you configure **conversion, calibration, registration, and stacking** s
 
 ### Directory structure / 想定ディレクトリ構成
 
-The script assumes the following structure relative to where you run it:
-
-- `biases/` – bias frames  
-- `flats/` – flat frames  
-- `darks/` – dark frames  
-- `lights/` – light frames  
-- `process/` – (usually `../process` from each subfolder) temporary converted sequences  
-- `masters/` – (usually `../masters`) output master frames  
-
+The script assumes the following structure relative to where you run it:  
 スクリプトは、実行ディレクトリから見て次のような構成を想定しています:
 
-- `biases/` – バイアスフレーム  
-- `flats/` – フラットフレーム  
-- `darks/` – ダークフレーム  
-- `lights/` – ライトフレーム  
-- `process/` – （各サブフォルダから見て `../process`）コンバート後のシーケンス用  
-- `masters/` – （`../masters`）マスターフレームの出力先  
+- `biases/` – bias frames / バイアスフレーム  
+- `flats/` – flat frames / フラットフレーム  
+- `darks/` – dark frames / ダークフレーム  
+- `lights/` – light frames / ライトフレーム  
+- `process/` – (usually `../process` from each subfolder) temporary converted sequences /（各サブフォルダから見て `../process`）コンバート後のシーケンス用  
+- `masters/` – (usually `../masters`) output master frames / マスターフレームの出力先  
+
 
 You can adjust the exact paths via the GUI fields if your layout is different.
-
 レイアウトが異なる場合でも、GUI 上の各入力欄からパスを変更できます。
 
 ---
@@ -98,7 +90,7 @@ You can adjust the exact paths via the GUI fields if your layout is different.
 - Drizzle requires **non‑debayered** data; the GUI automatically disables debayering options when drizzle is enabled (and vice versa).
 - Some advanced Siril options (e.g., distortion from file/masters) are partially wired and may need manual script editing depending on your workflow.
 
-- Siril への接続に失敗しても、GUI 自体は **スクリプト生成ツール** として利用できます。その場合は生成されたスクリプトをコピーし、Siril 内で手動実行してください。
+- GUI 自体は **スクリプト生成ツール** としても利用できます。その場合は生成されたスクリプトをコピーし、Siril 内で手動実行する事もできます。
 - ドリズルは **デベイヤー前の生データ** を必要とするため、ドリズル有効時には GUI 側でデベイヤー設定を自動的に無効化します（その逆も同様）。  
 - 一部の高度な Siril オプション（例: 歪曲補正ファイルの扱いなど）は GUI からは簡略化されており、必要に応じて生成スクリプトを手動で調整してください。
 
