@@ -100,7 +100,7 @@ class PreprocessGUI(QMainWindow):
         super().__init__()
         self.siril = siril_app
         self.setWindowTitle("prepflow v1.3")
-        self.resize(610, 630)
+        self.resize(620, 700)
         self.filters = []
 
         # Style sheet for uniform background
@@ -498,7 +498,7 @@ class PreprocessGUI(QMainWindow):
         self.grp_platesolve = QGroupBox("Plate Solve Sequence")
         ps_main_l = QVBoxLayout(self.grp_platesolve)
 
-        self.reg_platesolve_chk = QCheckBox("Enable Plate Solve (seqplatesolve)")
+        self.reg_platesolve_chk = QCheckBox("Enable Plate Solve")
         self.reg_platesolve_chk.setToolTip("Plate solve the calibrated sequence before registration (useful for mosaic stitching)")
         self.reg_platesolve_chk.toggled.connect(self.update_ui_states)
         ps_main_l.addWidget(self.reg_platesolve_chk)
@@ -561,41 +561,43 @@ class PreprocessGUI(QMainWindow):
         rad_l.addStretch()
         ps_grid.addWidget(self.reg_ps_radius_widget, 2, 2, 1, 3)
 
-        # Flags: downscale, force, noreg
-        flags_widget = QWidget()
-        fl_layout = QHBoxLayout(flags_widget)
-        fl_layout.setContentsMargins(0, 0, 0, 0)
-        self.reg_ps_downscale = QCheckBox("-downscale")
-        self.reg_ps_downscale.setToolTip("Downscale image for faster star detection")
-        self.reg_ps_force = QCheckBox("-force")
-        self.reg_ps_force.setToolTip("Force plate solve even if already solved")
-        self.reg_ps_noreg = QCheckBox("-noreg")
-        self.reg_ps_noreg.setToolTip("Do not register images after plate solving")
-        fl_layout.addWidget(self.reg_ps_downscale)
-        fl_layout.addWidget(self.reg_ps_force)
-        fl_layout.addWidget(self.reg_ps_noreg)
-        fl_layout.addStretch()
-        ps_grid.addWidget(flags_widget, 3, 0, 1, 6)
-
-        # Order, Catalog, Limitmag
-        ps_grid.addWidget(QLabel("Order:"), 4, 0)
+        # Order (moved below disable near search / radius and above flags)
+        ps_grid.addWidget(QLabel("Order:"), 3, 0)
         self.reg_ps_order = QComboBox()
         self.reg_ps_order.addItems(["linear", "quadratic", "cubic/SIP", "quartic", "quintic"])
         self.reg_ps_order.setCurrentIndex(2) # Default to cubic/SIP (order=3)
         self.reg_ps_order.setToolTip("Astrometric reduction polynomial order 1-5 (-order=)")
-        ps_grid.addWidget(self.reg_ps_order, 4, 1)
+        ps_grid.addWidget(self.reg_ps_order, 3, 1)
 
-        ps_grid.addWidget(QLabel("Catalog:"), 4, 2)
+        # Flags: downscale, force, auto-crop
+        flags_widget = QWidget()
+        fl_layout = QHBoxLayout(flags_widget)
+        fl_layout.setContentsMargins(0, 0, 0, 0)
+        self.reg_ps_downscale = QCheckBox("Downscale")
+        self.reg_ps_downscale.setToolTip("Downscale image for faster star detection")
+        self.reg_ps_force = QCheckBox("Force")
+        self.reg_ps_force.setToolTip("Force plate solve even if already solved")
+        self.reg_ps_autocrop = QCheckBox("Auto-crop")
+        self.reg_ps_autocrop.setChecked(True)
+        self.reg_ps_autocrop.setToolTip("Crop star detection area to center if FOV > 5 deg (uncheck to pass -nocrop)")
+        fl_layout.addWidget(self.reg_ps_downscale)
+        fl_layout.addWidget(self.reg_ps_force)
+        fl_layout.addWidget(self.reg_ps_autocrop)
+        fl_layout.addStretch()
+        ps_grid.addWidget(flags_widget, 4, 0, 1, 6)
+
+        # Catalog, Limitmag
+        ps_grid.addWidget(QLabel("Catalog:"), 5, 0)
         self.reg_ps_catalog = QComboBox()
         self.reg_ps_catalog.addItems(["auto", "gaia", "nomad", "ppmxl", "bright", "apass", "tycho2"])
         self.reg_ps_catalog.setToolTip("Astrometric catalog (-catalog=). 'auto' omits this option.")
-        ps_grid.addWidget(self.reg_ps_catalog, 4, 3)
+        ps_grid.addWidget(self.reg_ps_catalog, 5, 1)
 
-        ps_grid.addWidget(QLabel("Limit mag:"), 4, 4)
+        ps_grid.addWidget(QLabel("Limit mag:"), 5, 2)
         self.reg_ps_limitmag = QComboBox()
         self.reg_ps_limitmag.addItems(["auto", "10", "12", "14", "16", "18", "20"])
         self.reg_ps_limitmag.setToolTip("Magnitude limit for catalog stars (-limitmag=). 'auto' omits this option.")
-        ps_grid.addWidget(self.reg_ps_limitmag, 4, 5)
+        ps_grid.addWidget(self.reg_ps_limitmag, 5, 3)
 
         ps_main_l.addWidget(self.reg_platesolve_opts_widget)
         layout.addWidget(self.grp_platesolve)
@@ -1017,7 +1019,7 @@ class PreprocessGUI(QMainWindow):
             settings["reg_ps_radius"] = self.reg_ps_radius.value()
             settings["reg_ps_downscale"] = self.reg_ps_downscale.isChecked()
             settings["reg_ps_force"] = self.reg_ps_force.isChecked()
-            settings["reg_ps_noreg"] = self.reg_ps_noreg.isChecked()
+            settings["reg_ps_autocrop"] = self.reg_ps_autocrop.isChecked()
             settings["reg_ps_order"] = self.reg_ps_order.currentIndex()
             settings["reg_ps_catalog"] = self.reg_ps_catalog.currentIndex()
             settings["reg_ps_limitmag"] = self.reg_ps_limitmag.currentIndex()
@@ -1142,7 +1144,7 @@ class PreprocessGUI(QMainWindow):
         set_float(self.reg_ps_radius, "reg_ps_radius")
         set_chk(self.reg_ps_downscale, "reg_ps_downscale")
         set_chk(self.reg_ps_force, "reg_ps_force")
-        set_chk(self.reg_ps_noreg, "reg_ps_noreg")
+        set_chk(self.reg_ps_autocrop, "reg_ps_autocrop")
         set_idx(self.reg_ps_order, "reg_ps_order")
         set_idx(self.reg_ps_catalog, "reg_ps_catalog")
         set_idx(self.reg_ps_limitmag, "reg_ps_limitmag")
@@ -1358,13 +1360,13 @@ class ScriptGenerator:
                 rad = self.gui.reg_ps_radius.value()
                 ps_parts.append(f"-radius={rad:g}")
                 
-            # Flags: downscale, force, noreg
+            # Flags: downscale, force, nocrop
             if self.gui.reg_ps_downscale.isChecked():
                 ps_parts.append("-downscale")
             if self.gui.reg_ps_force.isChecked():
                 ps_parts.append("-force")
-            if self.gui.reg_ps_noreg.isChecked():
-                ps_parts.append("-noreg")
+            if not self.gui.reg_ps_autocrop.isChecked():
+                ps_parts.append("-nocrop")
                 
             # Order (1-5)
             # currentIndex: 0->1(linear), 1->2(quadratic), 2->3(cubic/SIP), 3->4(quartic), 4->5(quintic)
