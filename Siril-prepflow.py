@@ -41,8 +41,8 @@ except ImportError:
         print("Please install PyQt6 manually using: pip install PyQt6")
         sys.exit(1)
 
-def resolve_target_coordinates(target_name):
-    """Resolve astronomical target name to RA, Dec in decimal degrees using astropy."""
+def find_target_coordinates(target_name):
+    """Find astronomical target name to RA, Dec in decimal degrees using astropy."""
     try:
         from astropy.coordinates import SkyCoord
     except ImportError:
@@ -514,15 +514,15 @@ class PreprocessGUI(QMainWindow):
         self.reg_ps_target.setToolTip("Object name to query RA/Dec using astropy")
         ps_grid.addWidget(self.reg_ps_target, 0, 1)
 
-        self.reg_ps_resolve_btn = QPushButton("Resolve")
-        self.reg_ps_resolve_btn.setToolTip("Query coordinates using astropy")
-        self.reg_ps_resolve_btn.clicked.connect(self.on_resolve_target_clicked)
-        ps_grid.addWidget(self.reg_ps_resolve_btn, 0, 2)
+        self.reg_ps_find_btn = QPushButton("Find")
+        self.reg_ps_find_btn.setToolTip("Query coordinates using astropy")
+        self.reg_ps_find_btn.clicked.connect(self.on_find_target_clicked)
+        ps_grid.addWidget(self.reg_ps_find_btn, 0, 2)
 
         ps_grid.addWidget(QLabel("Center Coords:"), 0, 3)
         self.reg_ps_coords = QLineEdit()
         self.reg_ps_coords.setPlaceholderText("RA Dec in deg (e.g. 83.82208 -5.39111)")
-        self.reg_ps_coords.setToolTip("Image center coordinates (decimal degrees). Auto-filled when a target name is resolved.")
+        self.reg_ps_coords.setToolTip("Image center coordinates (decimal degrees). Auto-filled when a target name is found.")
         ps_grid.addWidget(self.reg_ps_coords, 0, 4, 1, 2)
 
         # Focal & Pixelsize
@@ -545,6 +545,7 @@ class PreprocessGUI(QMainWindow):
         # Radius & Disable Near Search
         self.reg_ps_disable_near = QCheckBox("Disable near search")
         self.reg_ps_disable_near.setToolTip("Check to disable near search (omits -radius= option)")
+        self.reg_ps_disable_near.setChecked(True)
         self.reg_ps_disable_near.toggled.connect(self.update_ui_states)
         ps_grid.addWidget(self.reg_ps_disable_near, 2, 0, 1, 2)
 
@@ -907,19 +908,19 @@ class PreprocessGUI(QMainWindow):
             self.filter_layout.removeWidget(row_widget)
             row_widget.deleteLater()
 
-    def on_resolve_target_clicked(self):
+    def on_find_target_clicked(self):
         target = self.reg_ps_target.text().strip()
         if not target:
-            QMessageBox.warning(self, "Resolve Coordinates", "Please enter a target name.")
+            QMessageBox.warning(self, "Find Coordinates", "Please enter a target name.")
             return
-        self.statusBar().showMessage(f"Resolving coordinates for '{target}'...")
-        coords, err = resolve_target_coordinates(target)
+        self.statusBar().showMessage(f"Finding coordinates for '{target}'...")
+        coords, err = find_target_coordinates(target)
         if coords:
             self.reg_ps_coords.setText(coords)
-            self.statusBar().showMessage(f"Resolved '{target}': {coords}", 5000)
+            self.statusBar().showMessage(f"Found '{target}': {coords}", 5000)
         else:
-            self.statusBar().showMessage(f"Failed to resolve '{target}'", 5000)
-            QMessageBox.warning(self, "Resolve Coordinates Failed", f"Could not find coordinates for '{target}'.\nError: {err}")
+            self.statusBar().showMessage(f"Failed to find '{target}'", 5000)
+            QMessageBox.warning(self, "Find Coordinates Failed", f"Could not find coordinates for '{target}'.\nError: {err}")
 
     def generate_script(self):
         generator = ScriptGenerator(self)
