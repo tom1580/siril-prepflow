@@ -17,7 +17,7 @@ It helps you configure **conversion, calibration, registration, and stacking** s
     従来の GUI 操作では、Convert, Calibration, Registration, Stack をそれぞれ手動で実行する必要がありました。
     
   - Even with automated scripts, users often had to manually edit the script code.  
-    従来の GUI 操作では、Convert, Calibration, Registration, Stack をそれぞれ手動で実行する必要がありました。
+    スクリプトで自動化する場合でも、従来はコードを直接書き換える手間がありました。
     
   - **Single-Click Execution:** This tool enables fully automated execution of the entire workflow via an intuitive GUI.  
     **GUI で完結:** 本ツールは、GUI 操作だけでこれらの一連の工程をすべて自動実行できます。
